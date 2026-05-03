@@ -1,0 +1,283 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTENTICAÇÃO ───────────────────────────────────────────────────────────
+model AppConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Usado para: LOCAL_PASSWORD_HASH, setup_completed, default_currency
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// ─── PERFIS (suporte a casal no futuro) ─────────────────────────────────────
+model Profile {
+  id             String               @id @default(cuid())
+  name           String
+  color          String               @default("#2E6DA4")
+  isDefault      Boolean              @default(false)
+  createdAt      DateTime             @default(now())
+  accounts       Account[]
+  patrimony      PatrimonyItem[]
+  cryptoWallets  CryptoWallet[]
+  investmentOps  InvestmentOperation[]
+}
+
+// ─── CONTAS BANCÁRIAS ────────────────────────────────────────────────────────
+model Account {
+  id             String         @id @default(cuid())
+  profileId      String
+  profile        Profile        @relation(fields: [profileId], references: [id])
+  bank           String         // 'nubank' | 'inter' | 'picpay' | 'wise' | 'other'
+  name           String         // Apelido: 'Nubank Conta', 'Inter CC'
+  type           String         // 'checking' | 'savings' | 'credit' | 'investment' | 'wallet'
+  currency       String         @default("BRL")
+  initialBalance Float          @default(0)
+  initialDate    DateTime?
+  isActive       Boolean        @default(true)
+  color          String         @default("#1ABC9C")
+  createdAt      DateTime       @default(now())
+  transactions   Transaction[]
+  dailyBalances  DailyBalance[]
+  subAccounts    SubAccount[]
+}
+
+model SubAccount {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id])
+  name      String   // 'Reserva de Emergência', 'Viagem Europa'
+  type      String   // 'savings_box' | 'investment_box'
+  balance   Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── CATEGORIAS ──────────────────────────────────────────────────────────────
+model Category {
+  id           String         @id @default(cuid())
+  name         String
+  parentId     String?
+  parent       Category?      @relation("CategoryTree", fields: [parentId], references: [id])
+  children     Category[]     @relation("CategoryTree")
+  icon         String         @default("circle")
+  color        String         @default("#95A5A6")
+  isSystem     Boolean        @default(false) // categorias padrão protegidas
+  isIncome     Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  transactions Transaction[]
+  rules        CategoryRule[]
+}
+
+model CategoryRule {
+  id            String   @id @default(cuid())
+  categoryId    String
+  category      Category @relation(fields: [categoryId], references: [id])
+  pattern       String   // texto normalizado ou regex
+  matchType     String   // 'exact' | 'contains' | 'regex'
+  priority      Int      @default(0) // maior = aplicado primeiro
+  applyToFuture Boolean  @default(true)
+  applyToAll    Boolean  @default(false)
+  hitCount      Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+// ─── TRANSAÇÕES ──────────────────────────────────────────────────────────────
+model Transaction {
+  id                  String            @id @default(cuid())
+  accountId           String
+  account             Account           @relation(fields: [accountId], references: [id])
+  categoryId          String?
+  category            Category?         @relation(fields: [categoryId], references: [id])
+  date                DateTime
+  description         String            // original do extrato
+  normalizedName      String            // uppercase, sem acentos, sem pontuação extra
+  amount              Float             // negativo = débito, positivo = crédito
+  type                String            // 'debit'|'credit'|'transfer_in'|'transfer_out'|'investment'|'refund'
+  isInternalTransfer  Boolean           @default(false)
+  linkedTransactionId String?           // par da transferência interna
+  balanceAfter        Float?            // saldo após, quando disponível no extrato
+  originalCurrency    String?           // para Wise: 'USD', 'EUR'
+  originalAmount      Float?            // valor na moeda original (Wise)
+  exchangeRate        Float?            // taxa de câmbio usada na conversão
+  importBatchId       String?
+  importBatch         ImportBatch?      @relation(fields: [importBatchId], references: [id])
+  notes               String?
+  tags                String            @default("[]") // JSON array de strings
+  categoryConfidence  Float?            // 0-1, confiança da categorização automática
+  categorySource      String?           // 'rule_exact'|'rule_fuzzy'|'manual'
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  editHistory         TransactionEdit[]
+}
+
+model TransactionEdit {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  field         String      // campo alterado
+  oldValue      String
+  newValue      String
+  editedAt      DateTime    @default(now())
+}
+
+model ImportBatch {
+  id           String        @id @default(cuid())
+  bank         String
+  fileName     String
+  fileType     String        // 'pdf' | 'csv' | 'xlsx'
+  rowCount     Int
+  status       String        // 'pending'|'processing'|'done'|'error'
+  errorMsg     String?
+  importedAt   DateTime      @default(now())
+  transactions Transaction[]
+}
+
+// ─── SALDO DIÁRIO ────────────────────────────────────────────────────────────
+model DailyBalance {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id])
+  date      DateTime // armazena apenas a data (00:00:00)
+  balance   Float
+
+  @@unique([accountId, date])
+}
+
+// ─── PATRIMÔNIO FÍSICO ───────────────────────────────────────────────────────
+model PatrimonyItem {
+  id              String             @id @default(cuid())
+  profileId       String
+  profile         Profile            @relation(fields: [profileId], references: [id])
+  name            String
+  type            String             // 'real_estate'|'vehicle'|'other'
+  subtype         String?            // 'apartment'|'house'|'land'|'car'|'motorcycle'
+  purchaseDate    DateTime
+  purchaseValue   Float
+  acquisitionType String             // 'cash'|'financed'|'inheritance'
+  fipeBrand       String?
+  fipeModel       String?
+  fipeYear        Int?
+  fipeFuel        String?
+  notes           String?
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  valueHistory    PatrimonyValue[]
+  linkedExpenses  PatrimonyExpense[]
+}
+
+model PatrimonyValue {
+  id        String        @id @default(cuid())
+  itemId    String
+  item      PatrimonyItem @relation(fields: [itemId], references: [id])
+  date      DateTime
+  value     Float
+  source    String        // 'manual'|'fipe'|'appraisal'
+  createdAt DateTime      @default(now())
+}
+
+model PatrimonyExpense {
+  id            String        @id @default(cuid())
+  itemId        String
+  item          PatrimonyItem @relation(fields: [itemId], references: [id])
+  transactionId String        // vincula à Transaction existente
+  createdAt     DateTime      @default(now())
+}
+
+// ─── INVESTIMENTOS (RENDA VARIÁVEL / FIXA) ───────────────────────────────────
+model InvestmentOperation {
+  id         String   @id @default(cuid())
+  profileId  String
+  profile    Profile  @relation(fields: [profileId], references: [id])
+  ticker     String
+  type       String   // 'buy'|'sell'|'bonus'|'split'|'reverse_split'|'transfer_in'|'transfer_out'
+  assetClass String   // 'stock'|'fii'|'etf'|'bdr'|'fixed_income'
+  date       DateTime
+  quantity   Float
+  unitPrice  Float
+  fees       Float    @default(0) // corretagem + emolumentos
+  broker     String?
+  notes      String?
+  createdAt  DateTime @default(now())
+}
+
+model ProventoCached {
+  id      String   @id @default(cuid())
+  ticker  String
+  exDate  DateTime // Data Com
+  payDate DateTime // Data de Pagamento
+  value   Float    // valor por ação/cota
+  type    String   // 'dividend'|'jcp'|'rendimento'|'amortization'
+  fetchedAt DateTime @default(now())
+
+  @@unique([ticker, exDate])
+}
+
+model FixedIncomeAsset {
+  id            String   @id @default(cuid())
+  profileId     String
+  name          String
+  issuer        String
+  indexer       String   // 'CDI'|'IPCA'|'prefixado'|'SELIC'
+  rate          Float    // ex: 0.12 para 12% a.a.
+  investedValue Float
+  currentValue  Float
+  purchaseDate  DateTime
+  maturityDate  DateTime
+  isRedeemed    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+// ─── CRIPTOMOEDAS ────────────────────────────────────────────────────────────
+model CryptoWallet {
+  id         String           @id @default(cuid())
+  profileId  String
+  profile    Profile          @relation(fields: [profileId], references: [id])
+  name       String           // 'Binance', 'Ledger', 'Mercado Bitcoin'
+  type       String           // 'exchange'|'cold_wallet'|'hot_wallet'
+  isActive   Boolean          @default(true)
+  createdAt  DateTime         @default(now())
+  operations CryptoOperation[]
+}
+
+model CryptoOperation {
+  id           String       @id @default(cuid())
+  walletId     String
+  wallet       CryptoWallet @relation(fields: [walletId], references: [id])
+  coin         String       // 'BTC'|'ETH'|'SOL' — coingecko id preferível
+  coingeckoId  String?      // ex: 'bitcoin', 'ethereum'
+  type         String       // 'buy'|'sell'|'transfer_in'|'transfer_out'|'staking_reward'|'airdrop'
+  date         DateTime
+  quantity     Float
+  unitPriceBRL Float        // preço na data em BRL
+  unitPriceUSD Float?
+  exchangeRate Float?       // BRL/USD na data
+  fees         Float        @default(0)
+  notes        String?
+  importBatchId String?
+  createdAt    DateTime     @default(now())
+}
+
+model CryptoPriceCache {
+  id          String   @id @default(cuid())
+  coingeckoId String
+  priceBRL    Float
+  priceUSD    Float
+  updatedAt   DateTime @updatedAt
+
+  @@unique([coingeckoId])
+}
