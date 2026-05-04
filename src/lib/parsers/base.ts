@@ -12,6 +12,15 @@ export function normalizeDescription(raw: string): string {
     .trim();
 }
 
+/** Lowercase + strip accents for flexible header matching */
+export function normalizeHeader(h: string): string {
+  return h
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
 /** Parses dd/mm/yyyy, dd/mm/yy or yyyy-mm-dd → ISO date string 'YYYY-MM-DD' */
 export function parseDate(raw: string): string | null {
   const s = raw.trim();
@@ -41,7 +50,6 @@ export function splitCSV(line: string, delimiter = ","): string[] {
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (ch === '"') {
-      // Handle escaped quote ""
       if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
       else inQ = !inQ;
     } else if (ch === delimiter && !inQ) {
@@ -55,10 +63,19 @@ export function splitCSV(line: string, delimiter = ","): string[] {
   return cols;
 }
 
-/** Strip UTF-8 BOM and normalise line endings */
+/**
+ * Decode buffer trying UTF-8 first, then Latin-1 (Windows-1252) as fallback.
+ * Strips UTF-8 BOM and normalises line endings.
+ */
 export function cleanText(buffer: Buffer): string {
-  let text = buffer.toString("utf-8");
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // BOM
+  // UTF-8 BOM
+  const hasBOM = buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf;
+  const raw = hasBOM ? buffer.slice(3) : buffer;
+
+  const utf8 = raw.toString("utf-8");
+  // � = replacement character → invalid UTF-8 sequence → try Latin-1
+  const text = utf8.includes("�") ? raw.toString("latin1") : utf8;
+
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
@@ -67,11 +84,11 @@ export function parseBRNumber(raw: string): number | null {
   const s = raw.trim().replace(/\s/g, "");
   if (!s) return null;
   // Format: 1.234,56 (BR)
-  if (/^\-?[\d.]+,\d{1,2}$/.test(s)) {
+  if (/^-?[\d.]+,\d{1,2}$/.test(s)) {
     const n = parseFloat(s.replace(/\./g, "").replace(",", "."));
     return isNaN(n) ? null : n;
   }
-  // Format: 1234.56 (US)
+  // Format: 1234.56 (US / Nubank)
   const n = parseFloat(s.replace(",", ""));
   return isNaN(n) ? null : n;
 }
