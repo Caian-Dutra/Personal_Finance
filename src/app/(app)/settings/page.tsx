@@ -1,12 +1,14 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccountsTab } from "@/components/settings/AccountsTab";
+import { CategoriesTab } from "@/components/settings/CategoriesTab";
+import { CategoryRulesTab } from "@/components/settings/CategoryRulesTab";
 
 export default function SettingsPage() {
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-4xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Configurações</h1>
-        <p className="text-sm text-slate-500 mt-1">Gerencie suas contas, categorias e preferências.</p>
+        <h1 className="text-xl font-semibold">Configurações</h1>
+        <p className="text-sm text-muted-foreground mt-1">Gerencie suas contas, categorias e regras de categorização.</p>
       </div>
 
       <Tabs defaultValue="accounts">
@@ -22,15 +24,11 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="categories" className="pt-4">
-          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-16 text-center">
-            <p className="text-sm text-slate-500">Gerenciamento de categorias — Sprint 5</p>
-          </div>
+          <CategoriesTab />
         </TabsContent>
 
         <TabsContent value="rules" className="pt-4">
-          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-16 text-center">
-            <p className="text-sm text-slate-500">Regras de categorização — Sprint 5</p>
-          </div>
+          <CategoryRulesTab />
         </TabsContent>
 
         <TabsContent value="general" className="pt-4">

@@ -120,9 +120,14 @@ model Transaction {
   tags                String            @default("[]") // JSON array de strings
   categoryConfidence  Float?            // 0-1, confiança da categorização automática
   categorySource      String?           // 'rule_exact'|'rule_fuzzy'|'manual'
+  deletedAt           DateTime?
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   editHistory         TransactionEdit[]
+
+  @@index([accountId, date(sort: Desc)])
+  @@index([categoryId])
+  @@index([deletedAt])
 }
 
 model TransactionEdit {

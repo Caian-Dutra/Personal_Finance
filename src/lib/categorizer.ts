@@ -8,11 +8,17 @@ export async function categorizeTransaction(normalizedName: string): Promise<Cat
 
   // Camada 1: exact
   const exactRule = rules.find((r) => r.matchType === "exact" && r.pattern === normalizedName);
-  if (exactRule) return { categoryId: exactRule.categoryId, confidence: 1.0, source: "rule_exact" };
+  if (exactRule) {
+    void prisma.categoryRule.update({ where: { id: exactRule.id }, data: { hitCount: { increment: 1 } } });
+    return { categoryId: exactRule.categoryId, confidence: 1.0, source: "rule_exact" };
+  }
 
   // Camada 2: contains
   const containsRule = rules.find((r) => r.matchType === "contains" && normalizedName.includes(r.pattern));
-  if (containsRule) return { categoryId: containsRule.categoryId, confidence: 0.9, source: "rule_contains" };
+  if (containsRule) {
+    void prisma.categoryRule.update({ where: { id: containsRule.id }, data: { hitCount: { increment: 1 } } });
+    return { categoryId: containsRule.categoryId, confidence: 0.9, source: "rule_contains" };
+  }
 
   // Camada 3: regex
   const regexRule = rules.find((r) => {
@@ -23,7 +29,10 @@ export async function categorizeTransaction(normalizedName: string): Promise<Cat
       return false;
     }
   });
-  if (regexRule) return { categoryId: regexRule.categoryId, confidence: 0.85, source: "rule_regex" };
+  if (regexRule) {
+    void prisma.categoryRule.update({ where: { id: regexRule.id }, data: { hitCount: { increment: 1 } } });
+    return { categoryId: regexRule.categoryId, confidence: 0.85, source: "rule_regex" };
+  }
 
   return { categoryId: null, confidence: 0, source: "none" };
 }

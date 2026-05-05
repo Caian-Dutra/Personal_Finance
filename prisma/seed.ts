@@ -148,6 +148,8 @@ const categories = [
       { name: "Rendimentos", icon: "trending-up", color: "#27AE60" },
       { name: "Aluguel Recebido", icon: "key-round", color: "#27AE60" },
       { name: "Reembolso", icon: "refresh-ccw", color: "#27AE60" },
+      { name: "Caronas", icon: "car", color: "#27AE60" },
+      { name: "Bolsa Acadêmica", icon: "graduation-cap", color: "#27AE60" },
       { name: "Outros Créditos", icon: "plus-circle", color: "#27AE60" },
     ],
   },
