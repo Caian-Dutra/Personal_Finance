@@ -178,6 +178,10 @@ model PatrimonyItem {
   fipeModel       String?
   fipeYear        Int?
   fipeFuel        String?
+  fipeBrandCode   String?            // código FIPE da marca
+  fipeModelCode   String?            // código FIPE do modelo
+  fipeYearCode    String?            // código FIPE do ano/combustível (ex: "2020-3")
+  fipeVehicleType String?            // 'carros'|'motos'|'caminhoes'
   notes           String?
   isActive        Boolean            @default(true)
   createdAt       DateTime           @default(now())
