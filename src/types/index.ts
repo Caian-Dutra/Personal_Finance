@@ -114,3 +114,67 @@ export interface PatrimonyItemInput {
   fipeFuel?: string;
   notes?: string;
 }
+
+export interface PatrimonyValue {
+  id: string;
+  itemId: string;
+  date: string;
+  value: number;
+  source: "manual" | "fipe" | "appraisal";
+  createdAt: string;
+}
+
+export interface PatrimonyExpenseLinked {
+  id: string;
+  itemId: string;
+  transactionId: string;
+  createdAt: string;
+  transaction?: {
+    id: string;
+    date: string;
+    description: string;
+    normalizedName: string;
+    amount: number;
+    type: string;
+    categoryId: string | null;
+    category?: { id: string; name: string; color: string; icon: string } | null;
+  };
+}
+
+export interface PatrimonyItemFull {
+  id: string;
+  profileId: string;
+  name: string;
+  type: "real_estate" | "vehicle" | "other";
+  subtype: string | null;
+  purchaseDate: string;
+  purchaseValue: number;
+  acquisitionType: string;
+  fipeBrand: string | null;
+  fipeModel: string | null;
+  fipeYear: number | null;
+  fipeFuel: string | null;
+  fipeBrandCode: string | null;
+  fipeModelCode: string | null;
+  fipeYearCode: string | null;
+  fipeVehicleType: string | null;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: string;
+  valueHistory: PatrimonyValue[];
+  linkedExpenses: { id: string; transactionId: string; createdAt: string }[];
+  currentValue: number;
+  totalExpenses: number;
+}
+
+export interface FipeResult {
+  brandCode: string;
+  modelCode: string;
+  yearCode: string;
+  brandName: string;
+  modelName: string;
+  year: number;
+  fuel: string;
+  value: number;
+  vehicleType: string;
+}
