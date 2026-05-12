@@ -1,6 +1,7 @@
 import { validateSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recalculateDailyBalances } from "@/lib/balance";
+import { findInternalTransferPairs, linkTransferPair, AUTO_LINK_THRESHOLD } from "@/lib/internalTransferDetector";
 import type { PreviewRow } from "../preview/route";
 
 interface ConfirmBody {
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
   });
 
   if (toImport.length === 0) {
-    return Response.json({ imported: 0, skipped: transactions.length });
+    return Response.json({ imported: 0, skipped: transactions.length, autoLinked: 0, suggestions: [] });
   }
 
   // Create ImportBatch
@@ -75,7 +76,6 @@ export async function POST(req: Request) {
     })),
   });
 
-  // Update batch status
   await prisma.importBatch.update({
     where: { id: batch.id },
     data: { status: "done", rowCount: toImport.length },
@@ -86,5 +86,27 @@ export async function POST(req: Request) {
   const oldestDate = new Date(Math.min(...dates.map((d) => d.getTime())));
   await recalculateDailyBalances(accountId, oldestDate);
 
-  return Response.json({ imported: toImport.length, skipped: transactions.length - toImport.length });
+  // ── Detect internal transfer pairs ──────────────────────────────────────────
+  const allAccounts = await prisma.account.findMany({ select: { id: true } });
+  const allAccountIds = allAccounts.map((a) => a.id);
+  const pairs = await findInternalTransferPairs(allAccountIds, oldestDate);
+
+  // Auto-link high-confidence pairs silently
+  let autoLinked = 0;
+  const suggestions = [];
+  for (const pair of pairs) {
+    if (pair.confidence >= AUTO_LINK_THRESHOLD) {
+      await linkTransferPair(pair.outId, pair.inId);
+      autoLinked++;
+    } else {
+      suggestions.push(pair);
+    }
+  }
+
+  return Response.json({
+    imported: toImport.length,
+    skipped: transactions.length - toImport.length,
+    autoLinked,
+    suggestions,
+  });
 }

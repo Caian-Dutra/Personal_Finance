@@ -12,13 +12,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Pencil, Tag, Trash2, ArrowLeftRight, Copy, ClipboardPaste, X } from "lucide-react";
+import { Pencil, Tag, Trash2, ArrowLeftRight, Copy, ClipboardPaste, X, Link2, Unlink } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TransactionEditDialog } from "./TransactionEditDialog";
 import { TransactionCategoryDialog } from "./TransactionCategoryDialog";
 import { TransactionDeleteDialog } from "./TransactionDeleteDialog";
 import { CategoryCombobox, type CategoryGroup } from "./CategoryCombobox";
+import { LinkTransactionDialog } from "./LinkTransactionDialog";
 
 export interface TxRow {
   id: string;
@@ -28,6 +29,7 @@ export interface TxRow {
   amount: number;
   type: string;
   isInternalTransfer: boolean;
+  linkedTransactionId: string | null;
   notes: string | null;
   tags: string;
   categoryId: string | null;
@@ -60,6 +62,7 @@ export function TransactionTable({ rows, total, page, totalPages, onPageChange }
   const [editTx, setEditTx] = useState<TxRow | null>(null);
   const [categorizeTx, setCategorizeTx] = useState<TxRow | null>(null);
   const [deleteTx, setDeleteTx] = useState<TxRow | null>(null);
+  const [linkTx, setLinkTx] = useState<TxRow | null>(null);
   const [bulkCategory, setBulkCategory] = useState("");
   const [clipboard, setClipboard] = useState<ClipboardCategory | null>(null);
 
@@ -138,6 +141,18 @@ export function TransactionTable({ rows, total, page, totalPages, onPageChange }
     else next.add(id);
     setSelected(next);
   }
+
+  const unlinkMutation = useMutation({
+    mutationFn: (txId: string) =>
+      fetch(`/api/transactions/${txId}/unlink`, { method: "DELETE" }).then(async (r) => {
+        if (!r.ok) throw new Error((await r.json() as { error: string }).error);
+      }),
+    onSuccess: () => {
+      toast.success("Vínculo removido");
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const pasteIsBusy = pasteMutation.isPending;
   const bulkIsBusy = bulkMutation.isPending;
@@ -265,9 +280,12 @@ export function TransactionTable({ rows, total, page, totalPages, onPageChange }
                       <span className="text-sm font-medium leading-tight">{tx.description}</span>
                       <div className="flex flex-wrap gap-1">
                         {tx.isInternalTransfer && (
-                          <Badge variant="secondary" className="text-xs gap-1 px-1 py-0">
+                          <Badge
+                            variant="secondary"
+                            className={`text-xs gap-1 px-1 py-0 ${tx.linkedTransactionId ? "text-blue-700 bg-blue-100" : ""}`}
+                          >
                             <ArrowLeftRight className="h-2.5 w-2.5" />
-                            Interna
+                            {tx.linkedTransactionId ? "Vinculada" : "Interna"}
                           </Badge>
                         )}
                         {tags.map((t) => (
@@ -369,6 +387,30 @@ export function TransactionTable({ rows, total, page, totalPages, onPageChange }
                         </Button>
                       )}
 
+                      {/* Vincular / Desvincular transferência interna */}
+                      {tx.linkedTransactionId ? (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-blue-600 hover:text-destructive"
+                          title="Desvincular transferência"
+                          disabled={unlinkMutation.isPending}
+                          onClick={() => unlinkMutation.mutate(tx.id)}
+                        >
+                          <Unlink className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-blue-600"
+                          title="Vincular como transferência interna"
+                          onClick={() => setLinkTx(tx)}
+                        >
+                          <Link2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+
                       <Button
                         size="icon"
                         variant="ghost"
@@ -417,6 +459,11 @@ export function TransactionTable({ rows, total, page, totalPages, onPageChange }
         transaction={deleteTx}
         open={!!deleteTx}
         onOpenChange={(o) => { if (!o) setDeleteTx(null); }}
+      />
+      <LinkTransactionDialog
+        transaction={linkTx}
+        open={!!linkTx}
+        onOpenChange={(o) => { if (!o) setLinkTx(null); }}
       />
     </div>
   );
