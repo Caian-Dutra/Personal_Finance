@@ -141,6 +141,16 @@ export interface PatrimonyExpenseLinked {
   };
 }
 
+export interface PatrimonyPurchaseTransaction {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  accountId: string;
+  account?: { id: string; name: string; bank: string } | null;
+  category?: { id: string; name: string; color: string; icon: string } | null;
+}
+
 export interface PatrimonyItemFull {
   id: string;
   profileId: string;
@@ -158,6 +168,8 @@ export interface PatrimonyItemFull {
   fipeModelCode: string | null;
   fipeYearCode: string | null;
   fipeVehicleType: string | null;
+  purchaseTransactionId: string | null;
+  purchaseTransaction: PatrimonyPurchaseTransaction | null;
   notes: string | null;
   isActive: boolean;
   createdAt: string;

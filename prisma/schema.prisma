@@ -35,6 +35,8 @@ model Profile {
   patrimony      PatrimonyItem[]
   cryptoWallets  CryptoWallet[]
   investmentOps  InvestmentOperation[]
+  proventos      ProventoReceived[]
+  fixedIncome    FixedIncomeAsset[]
 }
 
 // ─── CONTAS BANCÁRIAS ────────────────────────────────────────────────────────
@@ -178,11 +180,12 @@ model PatrimonyItem {
   fipeModel       String?
   fipeYear        Int?
   fipeFuel        String?
-  fipeBrandCode   String?            // código FIPE da marca
-  fipeModelCode   String?            // código FIPE do modelo
-  fipeYearCode    String?            // código FIPE do ano/combustível (ex: "2020-3")
-  fipeVehicleType String?            // 'carros'|'motos'|'caminhoes'
-  notes           String?
+  fipeBrandCode         String?            // código FIPE da marca
+  fipeModelCode         String?            // código FIPE do modelo
+  fipeYearCode          String?            // código FIPE do ano/combustível (ex: "2020-3")
+  fipeVehicleType       String?            // 'carros'|'motos'|'caminhoes'
+  purchaseTransactionId String?            // transação de aquisição do bem
+  notes                 String?
   isActive        Boolean            @default(true)
   createdAt       DateTime           @default(now())
   valueHistory    PatrimonyValue[]
@@ -207,48 +210,112 @@ model PatrimonyExpense {
   createdAt     DateTime      @default(now())
 }
 
-// ─── INVESTIMENTOS (RENDA VARIÁVEL / FIXA) ───────────────────────────────────
+// ─── INVESTIMENTOS — RENDA VARIÁVEL ─────────────────────────────────────────
+model InvImportBatch {
+  id         String               @id @default(cuid())
+  fileName   String
+  source     String               @default("b3_movimentacao")
+  rowCount   Int
+  status     String               // "done" | "error"
+  importedAt DateTime             @default(now())
+  operations InvestmentOperation[]
+}
+
 model InvestmentOperation {
-  id         String   @id @default(cuid())
+  id              String          @id @default(cuid())
+  profileId       String
+  profile         Profile         @relation(fields: [profileId], references: [id])
+  ticker          String
+  companyName     String?
+  assetClass      String          // "stock" | "fii" | "etf" | "bdr"
+  broker          String?
+  type            String          // buy|sell|dividend|jcp|rendimento|split|reverse_split|bonus_shares|fraction_sale|custody_transfer|lending|update|subscription_right|subscription_expired|redemption|fixed_income_apply
+  date            DateTime
+  quantity        Float
+  unitPrice       Float?          // null quando B3 não fornece
+  totalValue      Float?          // null quando B3 não fornece
+  fees            Float           @default(0)
+  affectsPosition Boolean         @default(true)
+  splitRatio      Float?
+  importBatchId   String?
+  importBatch     InvImportBatch? @relation(fields: [importBatchId], references: [id])
+  notes           String?
+  createdAt       DateTime        @default(now())
+
+  @@index([profileId, ticker])
+  @@index([profileId, date(sort: Desc)])
+}
+
+model ProventoReceived {
+  id         String    @id @default(cuid())
   profileId  String
-  profile    Profile  @relation(fields: [profileId], references: [id])
+  profile    Profile   @relation(fields: [profileId], references: [id])
   ticker     String
-  type       String   // 'buy'|'sell'|'bonus'|'split'|'reverse_split'|'transfer_in'|'transfer_out'
-  assetClass String   // 'stock'|'fii'|'etf'|'bdr'|'fixed_income'
+  assetClass String
+  type       String    // "dividend" | "jcp" | "rendimento" | "redemption"
   date       DateTime
+  exDate     DateTime?
   quantity   Float
-  unitPrice  Float
-  fees       Float    @default(0) // corretagem + emolumentos
+  unitValue  Float
+  totalValue Float
   broker     String?
-  notes      String?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
+
+  @@unique([ticker, date, type, broker])
+  @@index([profileId, date(sort: Desc)])
 }
 
-model ProventoCached {
-  id      String   @id @default(cuid())
-  ticker  String
-  exDate  DateTime // Data Com
-  payDate DateTime // Data de Pagamento
-  value   Float    // valor por ação/cota
-  type    String   // 'dividend'|'jcp'|'rendimento'|'amortization'
-  fetchedAt DateTime @default(now())
+model PriceHistory {
+  id        String   @id @default(cuid())
+  ticker    String
+  date      DateTime
+  close     Float
+  source    String   @default("brapi")
+  createdAt DateTime @default(now())
 
-  @@unique([ticker, exDate])
+  @@unique([ticker, date])
+  @@index([ticker, date])
 }
 
+model QuoteCache {
+  ticker    String   @id
+  price     Float
+  change1d  Float?
+  updatedAt DateTime @updatedAt
+}
+
+// ─── INVESTIMENTOS — RENDA FIXA / CAIXINHAS ─────────────────────────────────
 model FixedIncomeAsset {
-  id            String   @id @default(cuid())
-  profileId     String
-  name          String
-  issuer        String
-  indexer       String   // 'CDI'|'IPCA'|'prefixado'|'SELIC'
-  rate          Float    // ex: 0.12 para 12% a.a.
-  investedValue Float
-  currentValue  Float
-  purchaseDate  DateTime
-  maturityDate  DateTime
-  isRedeemed    Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  id              String                @id @default(cuid())
+  profileId       String
+  profile         Profile               @relation(fields: [profileId], references: [id])
+  name            String
+  subtype         String                // savings_box|cdb|lci|lca|tesouro_selic|tesouro_ipca|tesouro_prefixado|debenture|cri_cra|previdencia
+  issuer          String
+  indexer         String                // "CDI" | "IPCA" | "SELIC" | "prefixado" | "rendimento_diario"
+  rate            Float?
+  investedValue   Float                 @default(0)
+  currentValue    Float                 @default(0)
+  purchaseDate    DateTime
+  maturityDate    DateTime?
+  isActive        Boolean               @default(true)
+  linkedAccountId String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  movements       FixedIncomeMovement[]
+}
+
+model FixedIncomeMovement {
+  id                  String           @id @default(cuid())
+  assetId             String
+  asset               FixedIncomeAsset @relation(fields: [assetId], references: [id])
+  date                DateTime
+  type                String           // apply|redeem|yield|tax_iof|tax_ir|update
+  amount              Float
+  balanceAfter        Float?
+  description         String?
+  linkedTransactionId String?
+  createdAt           DateTime         @default(now())
 }
 
 // ─── CRIPTOMOEDAS ────────────────────────────────────────────────────────────

@@ -1,6 +1,17 @@
 import { validateSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+async function fetchPurchaseTransaction(txId: string | null) {
+  if (!txId) return null;
+  return prisma.transaction.findUnique({
+    where: { id: txId },
+    include: {
+      account: { select: { id: true, name: true, bank: true } },
+      category: { select: { id: true, name: true, color: true, icon: true } },
+    },
+  });
+}
+
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await validateSession(req);
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,7 +49,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     0
   );
 
-  return Response.json({ ...item, currentValue, totalExpenses });
+  const purchaseTransactionId =
+    (item as unknown as { purchaseTransactionId: string | null }).purchaseTransactionId ?? null;
+  const purchaseTransaction = await fetchPurchaseTransaction(purchaseTransactionId);
+
+  return Response.json({ ...item, purchaseTransactionId, purchaseTransaction, currentValue, totalExpenses });
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -62,6 +77,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     fipeModelCode?: string;
     fipeYearCode?: string;
     fipeVehicleType?: string;
+    purchaseTransactionId?: string | null;
     notes?: string;
   };
 
@@ -83,6 +99,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ...(body.fipeModelCode ? { fipeModelCode: body.fipeModelCode } : {}),
       ...(body.fipeYearCode ? { fipeYearCode: body.fipeYearCode } : {}),
       ...(body.fipeVehicleType ? { fipeVehicleType: body.fipeVehicleType } : {}),
+      // purchaseTransactionId: null significa "desvincular"; string = vincular
+      ...(body.purchaseTransactionId !== undefined
+        ? { purchaseTransactionId: body.purchaseTransactionId }
+        : {}),
     },
     include: {
       valueHistory: { orderBy: { date: "asc" } },
@@ -95,7 +115,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   );
   const currentValue = sorted.length > 0 ? sorted[0].value : item.purchaseValue;
 
-  return Response.json({ ...item, currentValue, totalExpenses: 0 });
+  const purchaseTransactionId =
+    (item as unknown as { purchaseTransactionId: string | null }).purchaseTransactionId ?? null;
+  const purchaseTransaction = await fetchPurchaseTransaction(purchaseTransactionId);
+
+  return Response.json({
+    ...item,
+    purchaseTransactionId,
+    purchaseTransaction,
+    currentValue,
+    totalExpenses: 0,
+  });
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {

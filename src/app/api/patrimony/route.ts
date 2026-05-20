@@ -16,15 +16,33 @@ export async function GET(req: Request) {
     orderBy: { purchaseDate: "desc" },
   });
 
-  const txIds = items.flatMap((i) => i.linkedExpenses.map((e) => e.transactionId));
-  const txAmounts =
-    txIds.length > 0
+  // Fetch expense amounts for total cost calculation
+  const expenseTxIds = items.flatMap((i) => i.linkedExpenses.map((e) => e.transactionId));
+  const expenseTxAmounts =
+    expenseTxIds.length > 0
       ? await prisma.transaction.findMany({
-          where: { id: { in: txIds } },
+          where: { id: { in: expenseTxIds } },
           select: { id: true, amount: true },
         })
       : [];
-  const txAmountMap = new Map(txAmounts.map((t) => [t.id, t.amount]));
+  const txAmountMap = new Map(expenseTxAmounts.map((t) => [t.id, t.amount]));
+
+  // Fetch purchase transactions in a single query
+  const purchaseTxIds = items
+    .map((i) => (i as unknown as { purchaseTransactionId: string | null }).purchaseTransactionId)
+    .filter(Boolean) as string[];
+
+  const purchaseTxs =
+    purchaseTxIds.length > 0
+      ? await prisma.transaction.findMany({
+          where: { id: { in: purchaseTxIds } },
+          include: {
+            account: { select: { id: true, name: true, bank: true } },
+            category: { select: { id: true, name: true, color: true, icon: true } },
+          },
+        })
+      : [];
+  const purchaseTxMap = new Map(purchaseTxs.map((t) => [t.id, t]));
 
   const result = items.map((item) => {
     const sorted = [...item.valueHistory].sort(
@@ -35,7 +53,13 @@ export async function GET(req: Request) {
       (sum, e) => sum + Math.abs(txAmountMap.get(e.transactionId) ?? 0),
       0
     );
-    return { ...item, currentValue, totalExpenses };
+    const purchaseTransactionId = (item as unknown as { purchaseTransactionId: string | null })
+      .purchaseTransactionId ?? null;
+    const purchaseTransaction = purchaseTransactionId
+      ? (purchaseTxMap.get(purchaseTransactionId) ?? null)
+      : null;
+
+    return { ...item, purchaseTransactionId, purchaseTransaction, currentValue, totalExpenses };
   });
 
   return Response.json(result);
@@ -60,6 +84,7 @@ export async function POST(req: Request) {
     fipeModelCode?: string;
     fipeYearCode?: string;
     fipeVehicleType?: string;
+    purchaseTransactionId?: string;
     notes?: string;
   };
 
@@ -88,6 +113,7 @@ export async function POST(req: Request) {
       ...(body.fipeModelCode ? { fipeModelCode: body.fipeModelCode } : {}),
       ...(body.fipeYearCode ? { fipeYearCode: body.fipeYearCode } : {}),
       ...(body.fipeVehicleType ? { fipeVehicleType: body.fipeVehicleType } : {}),
+      ...(body.purchaseTransactionId ? { purchaseTransactionId: body.purchaseTransactionId } : {}),
     },
   });
 
@@ -108,5 +134,25 @@ export async function POST(req: Request) {
     },
   });
 
-  return Response.json({ ...full, currentValue: item.purchaseValue, totalExpenses: 0 }, { status: 201 });
+  let purchaseTransaction = null;
+  if (body.purchaseTransactionId) {
+    purchaseTransaction = await prisma.transaction.findUnique({
+      where: { id: body.purchaseTransactionId },
+      include: {
+        account: { select: { id: true, name: true, bank: true } },
+        category: { select: { id: true, name: true, color: true, icon: true } },
+      },
+    });
+  }
+
+  return Response.json(
+    {
+      ...full,
+      purchaseTransactionId: body.purchaseTransactionId ?? null,
+      purchaseTransaction,
+      currentValue: item.purchaseValue,
+      totalExpenses: 0,
+    },
+    { status: 201 }
+  );
 }
