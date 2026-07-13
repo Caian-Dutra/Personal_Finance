@@ -81,10 +81,17 @@ function CustomTooltip({ active, payload, label, view }: TooltipProps & { view: 
   );
 }
 
+interface FetchProgress {
+  current: number;
+  total: number;
+  ticker: string;
+}
+
 export function PortfolioHistoryChart() {
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState<Period>("all");
   const [view, setView] = useState<View>("value");
+  const [fetchProgress, setFetchProgress] = useState<FetchProgress | null>(null);
 
   const { data, isLoading } = useQuery<HistoryData>({
     queryKey: ["portfolio-history"],
@@ -94,9 +101,55 @@ export function PortfolioHistoryChart() {
   const fetchAllMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/investments/price-history/fetch-all", { method: "POST" });
-      const json = await res.json() as { totalSaved?: number; tickers?: number; error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Erro ao buscar histórico");
-      return json;
+
+      if (!res.ok) {
+        const json = await res.json() as { error?: string };
+        throw new Error(json.error ?? "Erro ao buscar histórico");
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let totalSaved = 0;
+      let tickers = 0;
+      let rateLimitMessage: string | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE lines
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6)) as Record<string, unknown>;
+
+            if (event.type === "progress") {
+              setFetchProgress({
+                current: event.current as number,
+                total: event.total as number,
+                ticker: event.ticker as string,
+              });
+            } else if (event.type === "done") {
+              totalSaved = event.totalSaved as number;
+              tickers = event.tickers as number;
+            } else if (event.type === "rate_limit") {
+              rateLimitMessage = event.message as string;
+            }
+          } catch {
+            // malformed SSE line — ignore
+          }
+        }
+      }
+
+      setFetchProgress(null);
+      if (rateLimitMessage) throw new Error(rateLimitMessage);
+      return { totalSaved, tickers };
     },
     onSuccess: (data) => {
       toast.success(
@@ -105,6 +158,7 @@ export function PortfolioHistoryChart() {
       queryClient.invalidateQueries({ queryKey: ["portfolio-history"] });
     },
     onError: (e: Error) => toast.error(e.message),
+    onSettled: () => setFetchProgress(null),
   });
 
   if (isLoading) {
@@ -179,7 +233,11 @@ export function PortfolioHistoryChart() {
             ) : (
               <Database className="mr-2 h-3.5 w-3.5" />
             )}
-            {fetchAllMutation.isPending ? "Buscando..." : "Atualizar histórico"}
+            {fetchAllMutation.isPending
+              ? fetchProgress
+                ? `Buscando histórico: ${fetchProgress.current}/${fetchProgress.total} ativos...`
+                : "Iniciando..."
+              : "Atualizar histórico"}
           </Button>
         </div>
       </div>

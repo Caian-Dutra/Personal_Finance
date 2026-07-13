@@ -47,9 +47,11 @@ export async function getQuotes(tickers: string[]): Promise<BrapiQuote[]> {
   }));
 }
 
-export async function getPriceHistory(ticker: string): Promise<BrapiHistoricalPrice[]> {
-  // range=5y gives more history; free tickers work without token
-  const url = buildUrl(`/quote/${ticker}`, { range: "5y", interval: "1d" });
+export async function getPriceHistory(
+  ticker: string,
+  range = "2y"
+): Promise<BrapiHistoricalPrice[]> {
+  const url = buildUrl(`/quote/${ticker}`, { range, interval: "1d" });
   const res = await fetch(url, { cache: "no-store" });
 
   if (!res.ok) {
